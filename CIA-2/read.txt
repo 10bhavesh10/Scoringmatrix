@@ -1,1 +1,11 @@
+Genetic Algorithm:
 
+A whitebox neural network is created and the network is trained and the weights are optimized using the genetic algorithm.
+
+Cultural Algorithm:
+
+A blackbox neural network is created and the network is trained and the weights are optimized using the cultural algorithm.
+
+Note:
+
+I didn't have an idea on how to proceed on implementing particle swarm optimization and ant colony optimization on neural network. I will learn it and implement the algorithms in the neural network.
