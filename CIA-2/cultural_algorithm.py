@@ -1,19 +1,65 @@
 import numpy as np
-from sklearn.model_selection import train_test_split
-from keras.models import Sequential
-from keras.layers import Dense, Activation
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+import random
+
+class NeuralNetwork:
+    def __init__(self, input_size, hidden_size, output_size):
+        self.input_size = input_size
+        self.hidden_size = hidden_size
+        self.output_size = output_size
+        self.weights1 = np.random.rand(self.input_size, self.hidden_size)
+        self.weights2 = np.random.rand(self.hidden_size, self.output_size)
+        
+    def forward(self, X):
+        self.z1 = np.dot(X, self.weights1)
+        self.a1 = self.sigmoid(self.z1)
+        self.z2 = np.dot(self.a1, self.weights2)
+        self.y_hat = self.sigmoid(self.z2)
+        return self.y_hat
+        
+    def sigmoid(self, x):
+        return 1 / (1 + np.exp(-x))
+    
+    def get_weights(self):
+        return np.concatenate((self.weights1.ravel(), self.weights2.ravel()))
+
+    def set_weights(self, weights):
+        w1_size = self.input_size * self.hidden_size
+        self.weights1 = weights[:w1_size].reshape(self.input_size, self.hidden_size)
+        self.weights2 = weights[w1_size:].reshape(self.hidden_size, self.output_size)
 
 
-POP_SIZE = 50
-NUM_ITERATIONS = 100
-BELIEF_SPACE_SIZE = 5
-MUTATION_RATE = 0.01
-MUTATION_STD = 0.1
-NUM_INPUTS = 2
-NUM_CLASSES = 2
-HIDDEN_LAYER_SIZE =1
+def fitness_func(nn, X, y):
+    y_hat = nn.forward(X)
+    loss = np.sum((y - y_hat) ** 2)
+    return 1 / (1 + loss)
+
+def init_pop(size, nn):
+    pop = []
+    for i in range(size):
+        weights = nn.get_weights()
+        weights += np.random.uniform(-0.5, 0.5, size=weights.shape)
+        pop.append(weights)
+    return pop
+
+def cultural_algorithm(size, nn, num_iter, k, q, X, y):
+    pop = init_pop(size, nn)
+    best_fitness = float('-inf')
+    best_solution = None
+    for i in range(num_iter):
+        fitness = [fitness_func(nn.set_weights(weights), X, y) for weights in pop]
+        index = fitness.index(max(fitness))
+        if fitness[index] > best_fitness:
+            best_fitness = fitness[index]
+            best_solution = nn.set_weights(pop[index])
+        sorted_pop = [x for _, x in sorted(zip(fitness, pop), reverse=True)]
+        num_elite = int(k*size)
+        elite = sorted_pop[:num_elite]
+        for j in range(num_elite, size):
+            rand_elite = random.choice(elite)
+            pop[j] = rand_elite + np.random.uniform(-q, q, size=rand_elite.shape)
+            
+    return best_solution, best_fitness
 
 df=pd.read_csv('Bank_Personal_Loan_Modelling.csv')
 df['Experience']=abs(df['Experience'])
@@ -21,59 +67,19 @@ df['Annual_CCAvg']=df['CCAvg']*12
 df.drop(['ID','ZIP Code','CCAvg'],axis=1,inplace=True)
 X=df.drop('Personal Loan',axis=1).values
 y=df['Personal Loan'].values.reshape(-1,1)
-scaler = StandardScaler()
-X = scaler.fit_transform(X)
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
+X = (X - np.mean(X, axis=0)) / np.std(X, axis=0)
+input_size = X.shape[1]
+hidden_size = 10
+output_size = 1
+nn = NeuralNetwork(input_size, hidden_size, output_size)
+pop_size = 100
+num_iter = 100
+k = 0.2
+q = 0.1
 
-def create_model(weights):
-
-    model = Sequential()
-    model.add(Dense(HIDDEN_LAYER_SIZE, input_dim=NUM_INPUTS))
-    model.add(Activation('sigmoid'))
-    model.add(Dense(NUM_CLASSES))
-    model.add(Activation('softmax'))
-    model.set_weights(weights)
-    return model
-
-def softmax(x):
- 
-    exp_x = np.exp(x - np.max(x))
-    return exp_x / exp_x.sum(axis=0)
-
-def evaluate_fitness(individual, X, y):
-    model = create_model(individual)
-    y_pred = model.predict(X)
-    y_pred_labels = np.argmax(y_pred, axis=1)
-    y_true_labels = np.argmax(y, axis=1)
-    accuracy = np.mean(y_pred_labels == y_true_labels)
-    return accuracy
-
-
-population = [np.random.uniform(low=-1, high=1, size=(NUM_INPUTS*HIDDEN_LAYER_SIZE+HIDDEN_LAYER_SIZE*NUM_CLASSES,))
-              for _ in range(POP_SIZE)]
-
-belief_space = [population[np.argmax([evaluate_fitness(individual, X_train, y_train) for individual in population])]]
-
-for i in range(NUM_ITERATIONS):
-    fitness_scores = [evaluate_fitness(individual, X_train, y_train) for individual in population]
-    population = [individual for _, individual in sorted(zip(fitness_scores, population), reverse=True)]
-    if i % BELIEF_SPACE_SIZE == 0:
-        best_individual = population[0]
-        if evaluate_fitness(best_individual, X_train, y_train) > evaluate_fitness(belief_space[-1], X_train, y_train):
-            belief_space.append(best_individual)
-            belief_space = belief_space[-BELIEF_SPACE_SIZE:]
-    new_population = []
-    for j in range(POP_SIZE):
-        belief = belief_space[np.random.randint(len(belief_space))]
-        mutation = np.random.normal(loc=0, scale=MUTATION_STD)
-    mutated_weights = belief + MUTATION_RATE * mutation
-    new_population.append(mutated_weights)
-population = new_population
-best_individual = belief_space[-1]
-model = create_model(best_individual)
-y_pred = model.predict(X_test)
-y_pred_labels = np.argmax(y_pred, axis=1)
-y_true_labels = np.argmax(y_test, axis=1)
-test_accuracy = np.mean(y_pred_labels == y_true_labels)
-print('Test accuracy:', test_accuracy)
+best_solution, best_fitness = cultural_algorithm(pop_size, nn, num_iter, k, q, X, y)
+nn.set_weights(best_solution)
+y_hat = nn.forward(X)
+accuracy = np.mean((y_hat.round() == y).astype(int))
+print("Best solution found with fitness = {:.4f} and accuracy = {:.2f}%".format(best_fitness, accuracy * 100))
